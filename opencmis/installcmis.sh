@@ -1,0 +1,2 @@
+cp /Users/cecilelepape/workspace/opencmis/chemistry-opencmis-test/chemistry-opencmis-test-browser-app/target/chemistry-opencmis-test-browser-app-1.0.0-SNAPSHOT.war /Users/cecilelepape/Documents/tools/apache-tomcat-8.0-2.24/webapps/browser.war
+cp /Users/cecilelepape/workspace/opencmis/chemistry-opencmis-server/chemistry-opencmis-server-fileshare/target/chemistry-opencmis-server-fileshare-1.0.0-SNAPSHOT.war /Users/cecilelepape/Documents/tools/apache-tomcat-8.0-2.24/webapps/fileshare.war
