@@ -25,3 +25,15 @@ local.properties
 
 # Locally stored "Eclipse launch configurations"
 *.launch
+
+# Intellij
+.idea/
+*.iml
+*.iws
+
+# Mac
+.DS_Store
+
+# Maven
+log/
+target/
