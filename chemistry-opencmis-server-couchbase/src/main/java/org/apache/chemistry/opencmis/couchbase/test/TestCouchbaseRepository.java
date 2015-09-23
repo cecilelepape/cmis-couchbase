@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 
-
 import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
 import org.apache.chemistry.opencmis.commons.data.ObjectData;
@@ -28,6 +27,7 @@ import org.apache.chemistry.opencmis.couchbase.CouchbaseRepository;
 import org.apache.chemistry.opencmis.couchbase.CouchbaseRepositoryManager;
 import org.apache.chemistry.opencmis.couchbase.CouchbaseService;
 import org.apache.chemistry.opencmis.couchbase.CouchbaseTypeManager;
+import org.apache.chemistry.opencmis.couchbase.LocalStorageService;
 import org.apache.chemistry.opencmis.couchbase.StorageService;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -56,27 +56,27 @@ public class TestCouchbaseRepository {
 	@BeforeClass
 	static public void before(){
 		cbService = CouchbaseService.getInstance();
-		StorageService.init(storagePath);
-		storageService = StorageService.getInstance();
+		storageService = new LocalStorageService(storagePath);
 	}
 	
 	@AfterClass
 	static public void after(){
 		if(cbService !=null){
 			cbService.close();
+			cbService = null;
 		}
 		if(storageService != null){
 			storageService.close();
+			storageService = null;
 		}
 	}
 
 	@Test
 	public void testGetRepo() {
 		repo = new CouchbaseRepository(repoId,
-				storagePath,
 				typeManager);
 		assertNotNull("repo not found", repo);
-		
+		repo.setStorageService(storageService);
 		// check if root document exists
 		try {
 			boolean rootExists = cbService.checkIfExists(CouchbaseRepository.ROOT_ID);
@@ -95,7 +95,6 @@ public class TestCouchbaseRepository {
 
 		try {
 			repo = new CouchbaseRepository(repoId,
-					storagePath,
 					typeManager);
 			assertNotNull("repo not found", repo);
 			System.out.println("Repository ok.");

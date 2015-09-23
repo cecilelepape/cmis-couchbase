@@ -151,7 +151,7 @@ public class CouchbaseRepository {
 	/** Repository id. */
 	private final String repositoryId;
 	/** Root directory. */
-	private final File root;
+	// private final File root;
 	/** Types. */
 	private final CouchbaseTypeManager typeManager;
 	/** Users. */
@@ -166,7 +166,7 @@ public class CouchbaseRepository {
 	private StorageService storeService;
 
 	public CouchbaseRepository(final String repositoryId,
-			final String rootPath, final CouchbaseTypeManager typeManager) {
+			final CouchbaseTypeManager typeManager) {
 		// check repository id
 		if (repositoryId == null || repositoryId.trim().length() == 0) {
 			throw new IllegalArgumentException("Invalid repository id!");
@@ -174,15 +174,11 @@ public class CouchbaseRepository {
 
 		this.repositoryId = repositoryId;
 
-		// check root folder
-		if (rootPath == null || rootPath.trim().length() == 0) {
-			throw new IllegalArgumentException("Invalid root folder!");
-		}
-
-		root = new File(rootPath);
-		if (!root.isDirectory()) {
-			throw new IllegalArgumentException("Root is not a directory!");
-		}
+		// root = new File(rootPath);
+		/*
+		 * if (!root.isDirectory()) { throw new
+		 * IllegalArgumentException("Root is not a directory!"); }
+		 */
 
 		// set type manager objects
 		this.typeManager = typeManager;
@@ -198,11 +194,11 @@ public class CouchbaseRepository {
 		cbService = CouchbaseService.getInstance();
 		debug("Connection to cbservice = " + cbService);
 
-		// storage
-		StorageService.init(rootPath);
-		storeService = StorageService.getInstance();
-		debug("Connection to storeService = " + storeService);
+	}
 
+	public void setStorageService(StorageService storageService) {
+		debug("storage service set");
+		this.storeService = storageService;
 	}
 
 	private RepositoryInfo createRepositoryInfo(CmisVersion cmisVersion) {
@@ -357,9 +353,9 @@ public class CouchbaseRepository {
 	/**
 	 * Returns the root directory of this repository
 	 */
-	public File getRootDirectory() {
-		return root;
-	}
+	/*
+	 * public File getRootDirectory() { return root; }
+	 */
 
 	/**
 	 * Sets read-only flag for the given user.
@@ -567,142 +563,103 @@ public class CouchbaseRepository {
 	public String createDocumentFromSource(CallContext context,
 			String sourceId, Properties properties, String folderId,
 			VersioningState versioningState) {
-		debug("createDocumentFromSource");
-		checkUser(context, true);
-
-		// check versioning state
-		if (!(VersioningState.NONE == versioningState || versioningState == null)) {
-			throw new CmisConstraintException("Versioning not supported!");
-		}
-
-		// get parent File
-		File parent = getFile(folderId);
-		if (!parent.isDirectory()) {
-			throw new CmisObjectNotFoundException("Parent is not a folder!");
-		}
-
-		// get source File
-		File source = getFile(sourceId);
-		if (!source.isFile()) {
-			throw new CmisObjectNotFoundException("Source is not a document!");
-		}
-
-		// file name
-		String name = source.getName();
-
-		// get properties
-		PropertiesImpl sourceProperties = new PropertiesImpl();
-		readCustomProperties(source, sourceProperties, null,
-				new ObjectInfoImpl());
-
-		// get the type id
-		String typeId = CouchbaseUtils.getIdProperty(sourceProperties,
-				PropertyIds.OBJECT_TYPE_ID);
-		if (typeId == null) {
-			typeId = BaseTypeId.CMIS_DOCUMENT.value();
-		}
-
-		// copy properties
-		PropertiesImpl newProperties = new PropertiesImpl();
-		for (PropertyData<?> prop : sourceProperties.getProperties().values()) {
-			if (prop.getId().equals(PropertyIds.OBJECT_TYPE_ID)
-					|| prop.getId().equals(PropertyIds.CREATED_BY)
-					|| prop.getId().equals(PropertyIds.CREATION_DATE)
-					|| prop.getId().equals(PropertyIds.LAST_MODIFIED_BY)) {
-				continue;
-			}
-
-			newProperties.addProperty(prop);
-		}
-
-		// replace properties
-		if (properties != null) {
-			// find new name
-			String newName = CouchbaseUtils.getStringProperty(properties,
-					PropertyIds.NAME);
-			if (newName != null) {
-				if (!isValidName(newName)) {
-					throw new CmisNameConstraintViolationException(
-							"Name is not valid!");
-				}
-				name = newName;
-			}
-
-			// get the property definitions
-			TypeDefinition type = typeManager.getInternalTypeDefinition(typeId);
-			if (type == null) {
-				throw new CmisObjectNotFoundException("Type '" + typeId
-						+ "' is unknown!");
-			}
-			if (type.getBaseTypeId() != BaseTypeId.CMIS_DOCUMENT) {
-				throw new CmisInvalidArgumentException(
-						"Type must be a document type!");
-			}
-
-			// replace with new values
-			for (PropertyData<?> prop : properties.getProperties().values()) {
-				PropertyDefinition<?> propType = type.getPropertyDefinitions()
-						.get(prop.getId());
-
-				// do we know that property?
-				if (propType == null) {
-					throw new CmisConstraintException("Property '"
-							+ prop.getId() + "' is unknown!");
-				}
-
-				// can it be set?
-				if (propType.getUpdatability() != Updatability.READWRITE) {
-					throw new CmisConstraintException("Property '"
-							+ prop.getId() + "' cannot be updated!");
-				}
-
-				// empty properties are invalid
-				if (isEmptyProperty(prop)) {
-					throw new CmisConstraintException("Property '"
-							+ prop.getId() + "' must not be empty!");
-				}
-
-				newProperties.addProperty(prop);
-			}
-		}
-
-		addPropertyId(newProperties, typeId, null, PropertyIds.OBJECT_TYPE_ID,
-				typeId);
-		addPropertyString(newProperties, typeId, null, PropertyIds.CREATED_BY,
-				context.getUsername());
-		addPropertyDateTime(newProperties, typeId, null,
-				PropertyIds.CREATION_DATE,
-				CouchbaseUtils.millisToCalendar(System.currentTimeMillis()));
-		addPropertyString(newProperties, typeId, null,
-				PropertyIds.LAST_MODIFIED_BY, context.getUsername());
-
-		// check the file
-		File newFile = new File(parent, name);
-		if (newFile.exists()) {
-			throw new CmisNameConstraintViolationException(
-					"Document already exists.");
-		}
-
-		// create the file
-		try {
-			newFile.createNewFile();
-		} catch (IOException e) {
-			throw new CmisStorageException("Could not create file: "
-					+ e.getMessage(), e);
-		}
-
-		// copy content
-		try {
-			writeContent(newFile, new FileInputStream(source));
-		} catch (IOException e) {
-			throw new CmisStorageException("Could not roead or write content: "
-					+ e.getMessage(), e);
-		}
-
-		// write properties
-		writePropertiesFile(newFile, newProperties);
-
-		return getId(newFile);
+		debug("createDocumentFromSource noyt yet implemented");
+		/*
+		 * checkUser(context, true);
+		 * 
+		 * // check versioning state if (!(VersioningState.NONE ==
+		 * versioningState || versioningState == null)) { throw new
+		 * CmisConstraintException("Versioning not supported!"); }
+		 * 
+		 * // get parent File File parent = getFile(folderId); if
+		 * (!parent.isDirectory()) { throw new
+		 * CmisObjectNotFoundException("Parent is not a folder!"); }
+		 * 
+		 * // get source File File source = getFile(sourceId); if
+		 * (!source.isFile()) { throw new
+		 * CmisObjectNotFoundException("Source is not a document!"); }
+		 * 
+		 * // file name String name = source.getName();
+		 * 
+		 * // get properties PropertiesImpl sourceProperties = new
+		 * PropertiesImpl(); readCustomProperties(source, sourceProperties,
+		 * null, new ObjectInfoImpl());
+		 * 
+		 * // get the type id String typeId =
+		 * CouchbaseUtils.getIdProperty(sourceProperties,
+		 * PropertyIds.OBJECT_TYPE_ID); if (typeId == null) { typeId =
+		 * BaseTypeId.CMIS_DOCUMENT.value(); }
+		 * 
+		 * // copy properties PropertiesImpl newProperties = new
+		 * PropertiesImpl(); for (PropertyData<?> prop :
+		 * sourceProperties.getProperties().values()) { if
+		 * (prop.getId().equals(PropertyIds.OBJECT_TYPE_ID) ||
+		 * prop.getId().equals(PropertyIds.CREATED_BY) ||
+		 * prop.getId().equals(PropertyIds.CREATION_DATE) ||
+		 * prop.getId().equals(PropertyIds.LAST_MODIFIED_BY)) { continue; }
+		 * 
+		 * newProperties.addProperty(prop); }
+		 * 
+		 * // replace properties if (properties != null) { // find new name
+		 * String newName = CouchbaseUtils.getStringProperty(properties,
+		 * PropertyIds.NAME); if (newName != null) { if (!isValidName(newName))
+		 * { throw new CmisNameConstraintViolationException(
+		 * "Name is not valid!"); } name = newName; }
+		 * 
+		 * // get the property definitions TypeDefinition type =
+		 * typeManager.getInternalTypeDefinition(typeId); if (type == null) {
+		 * throw new CmisObjectNotFoundException("Type '" + typeId +
+		 * "' is unknown!"); } if (type.getBaseTypeId() !=
+		 * BaseTypeId.CMIS_DOCUMENT) { throw new CmisInvalidArgumentException(
+		 * "Type must be a document type!"); }
+		 * 
+		 * // replace with new values for (PropertyData<?> prop :
+		 * properties.getProperties().values()) { PropertyDefinition<?> propType
+		 * = type.getPropertyDefinitions() .get(prop.getId());
+		 * 
+		 * // do we know that property? if (propType == null) { throw new
+		 * CmisConstraintException("Property '" + prop.getId() +
+		 * "' is unknown!"); }
+		 * 
+		 * // can it be set? if (propType.getUpdatability() !=
+		 * Updatability.READWRITE) { throw new
+		 * CmisConstraintException("Property '" + prop.getId() +
+		 * "' cannot be updated!"); }
+		 * 
+		 * // empty properties are invalid if (isEmptyProperty(prop)) { throw
+		 * new CmisConstraintException("Property '" + prop.getId() +
+		 * "' must not be empty!"); }
+		 * 
+		 * newProperties.addProperty(prop); } }
+		 * 
+		 * addPropertyId(newProperties, typeId, null,
+		 * PropertyIds.OBJECT_TYPE_ID, typeId); addPropertyString(newProperties,
+		 * typeId, null, PropertyIds.CREATED_BY, context.getUsername());
+		 * addPropertyDateTime(newProperties, typeId, null,
+		 * PropertyIds.CREATION_DATE,
+		 * CouchbaseUtils.millisToCalendar(System.currentTimeMillis()));
+		 * addPropertyString(newProperties, typeId, null,
+		 * PropertyIds.LAST_MODIFIED_BY, context.getUsername());
+		 * 
+		 * // check the file File newFile = new File(parent, name); if
+		 * (newFile.exists()) { throw new CmisNameConstraintViolationException(
+		 * "Document already exists."); }
+		 * 
+		 * // create the file try { newFile.createNewFile(); } catch
+		 * (IOException e) { throw new
+		 * CmisStorageException("Could not create file: " + e.getMessage(), e);
+		 * }
+		 * 
+		 * // copy content try { writeContent(newFile, new
+		 * FileInputStream(source)); } catch (IOException e) { throw new
+		 * CmisStorageException("Could not roead or write content: " +
+		 * e.getMessage(), e); }
+		 * 
+		 * // write properties writePropertiesFile(newFile, newProperties);
+		 * 
+		 * return getId(newFile);
+		 */
+		return null;
 	}
 
 	/**
@@ -808,46 +765,34 @@ public class CouchbaseRepository {
 	public void changeContentStream(CallContext context,
 			Holder<String> objectId, Boolean overwriteFlag,
 			ContentStream contentStream, boolean append) {
-		debug("setContentStream or deleteContentStream or appendContentStream");
-		checkUser(context, true);
+		debug("setContentStream or deleteContentStream or appendContentStream not yet implemented");
+		/*
+		 * checkUser(context, true);
+		 * 
+		 * if (objectId == null) { throw new
+		 * CmisInvalidArgumentException("Id is not valid!"); }
+		 * 
+		 * // get the file File file = getFile(objectId.getValue()); if
+		 * (!file.isFile()) { throw new
+		 * CmisStreamNotSupportedException("Not a file!"); }
+		 * 
+		 * // check overwrite boolean owf =
+		 * CouchbaseUtils.getBooleanParameter(overwriteFlag, true); if (!owf &&
+		 * file.length() > 0) { throw new CmisContentAlreadyExistsException(
+		 * "Content already exists!"); }
+		 * 
+		 * OutputStream out = null; InputStream in = null; try { out = new
+		 * FileOutputStream(file, append);
+		 * 
+		 * if (contentStream == null || contentStream.getStream() == null) { //
+		 * delete content out.write(new byte[0]); } else { // set content in =
+		 * contentStream.getStream(); IOUtils.copy(in, out, BUFFER_SIZE); } }
+		 * catch (Exception e) { throw new
+		 * CmisStorageException("Could not write content: " + e.getMessage(),
+		 * e); } finally { IOUtils.closeQuietly(out); IOUtils.closeQuietly(in);
+		 * }
+		 */
 
-		if (objectId == null) {
-			throw new CmisInvalidArgumentException("Id is not valid!");
-		}
-
-		// get the file
-		File file = getFile(objectId.getValue());
-		if (!file.isFile()) {
-			throw new CmisStreamNotSupportedException("Not a file!");
-		}
-
-		// check overwrite
-		boolean owf = CouchbaseUtils.getBooleanParameter(overwriteFlag, true);
-		if (!owf && file.length() > 0) {
-			throw new CmisContentAlreadyExistsException(
-					"Content already exists!");
-		}
-
-		OutputStream out = null;
-		InputStream in = null;
-		try {
-			out = new FileOutputStream(file, append);
-
-			if (contentStream == null || contentStream.getStream() == null) {
-				// delete content
-				out.write(new byte[0]);
-			} else {
-				// set content
-				in = contentStream.getStream();
-				IOUtils.copy(in, out, BUFFER_SIZE);
-			}
-		} catch (Exception e) {
-			throw new CmisStorageException("Could not write content: "
-					+ e.getMessage(), e);
-		} finally {
-			IOUtils.closeQuietly(out);
-			IOUtils.closeQuietly(in);
-		}
 	}
 
 	/**
@@ -865,10 +810,12 @@ public class CouchbaseRepository {
 
 		debug("check if object exists objectId=" + objectId);
 
-		//boolean contentExists = storeService.exists(objectId);
+		// boolean contentExists = storeService.exists(objectId);
 
-		/*if (!contentExists)
-			throw new CmisObjectNotFoundException("Content not found!");*/
+		/*
+		 * if (!contentExists) throw new
+		 * CmisObjectNotFoundException("Content not found!");
+		 */
 
 		// check if it is a folder and if it is empty
 		if (data.isDirectory() && (!data.getChildren().isEmpty())) {
@@ -902,26 +849,25 @@ public class CouchbaseRepository {
 	 */
 	public FailedToDeleteData deleteTree(CallContext context, String folderId,
 			Boolean continueOnFailure) {
-		debug("deleteTree");
-		checkUser(context, true);
-
-		boolean cof = CouchbaseUtils.getBooleanParameter(continueOnFailure,
-				false);
-
-		// get the file or folder
-		File file = getFile(folderId);
-
-		FailedToDeleteDataImpl result = new FailedToDeleteDataImpl();
-		result.setIds(new ArrayList<String>());
-
-		// if it is a folder, remove it recursively
-		if (file.isDirectory()) {
-			deleteFolder(file, cof, result);
-		} else {
-			throw new CmisConstraintException("Object is not a folder!");
-		}
-
-		return result;
+		debug("deleteTree not yet implemented");
+		/*
+		 * checkUser(context, true);
+		 * 
+		 * boolean cof = CouchbaseUtils.getBooleanParameter(continueOnFailure,
+		 * false);
+		 * 
+		 * // get the file or folder File file = getFile(folderId);
+		 * 
+		 * FailedToDeleteDataImpl result = new FailedToDeleteDataImpl();
+		 * result.setIds(new ArrayList<String>());
+		 * 
+		 * // if it is a folder, remove it recursively if (file.isDirectory()) {
+		 * deleteFolder(file, cof, result); } else { throw new
+		 * CmisConstraintException("Object is not a folder!"); }
+		 * 
+		 * return result;
+		 */
+		return null;
 	}
 
 	/**
@@ -929,33 +875,22 @@ public class CouchbaseRepository {
 	 */
 	private boolean deleteFolder(File folder, boolean continueOnFailure,
 			FailedToDeleteDataImpl ftd) {
-		boolean success = true;
-
-		for (File file : folder.listFiles()) {
-			if (file.isDirectory()) {
-				if (!deleteFolder(file, continueOnFailure, ftd)) {
-					if (!continueOnFailure) {
-						return false;
-					}
-					success = false;
-				}
-			} else {
-				if (!file.delete()) {
-					ftd.getIds().add(getId(file));
-					if (!continueOnFailure) {
-						return false;
-					}
-					success = false;
-				}
-			}
-		}
-
-		if (!folder.delete()) {
-			ftd.getIds().add(getId(folder));
-			success = false;
-		}
-
-		return success;
+		debug("deleteFolder not yet implemented");
+		/*
+		 * boolean success = true;
+		 * 
+		 * for (File file : folder.listFiles()) { if (file.isDirectory()) { if
+		 * (!deleteFolder(file, continueOnFailure, ftd)) { if
+		 * (!continueOnFailure) { return false; } success = false; } } else { if
+		 * (!file.delete()) { ftd.getIds().add(getId(file)); if
+		 * (!continueOnFailure) { return false; } success = false; } } }
+		 * 
+		 * if (!folder.delete()) { ftd.getIds().add(getId(folder)); success =
+		 * false; }
+		 * 
+		 * return success;
+		 */
+		return true;
 	}
 
 	/**
@@ -1089,7 +1024,8 @@ public class CouchbaseRepository {
 			Boolean includeAllowableActions, Boolean includeAcl,
 			ObjectInfoHandler objectInfos) {
 		debug("getObject");
-		debug("getObject objectId:" + objectId+" - versionServicesId="+versionServicesId);
+		debug("getObject objectId:" + objectId + " - versionServicesId="
+				+ versionServicesId);
 
 		boolean userReadOnly = checkUser(context, false);
 
@@ -1125,20 +1061,13 @@ public class CouchbaseRepository {
 				userReadOnly, objectInfos);
 	}
 
-	private String encode(String objectId) {
-		debug("encode objectId=" + objectId);
-		// only root dir is supposed to be called like that
-		if (ROOT_ID.equals(objectId)) {
-			return ROOT_ID;
-		}
-
-		/*
-		 * String path = getRepositoryPath(file);
-		 * 
-		 * return Base64.encodeBytes(path.getBytes("UTF-8"));
-		 */
-		return objectId;
-	}
+	/*
+	 * private String encode(String objectId) { debug("encode objectId=" +
+	 * objectId); // only root dir is supposed to be called like that if
+	 * (ROOT_ID.equals(objectId)) { return ROOT_ID; }
+	 * 
+	 * return objectId; }
+	 */
 
 	public CmisObject getCmisObject(String objectId) {
 		try {
@@ -1153,31 +1082,33 @@ public class CouchbaseRepository {
 	 */
 	public AllowableActions getAllowableActions(CallContext context,
 			String objectId) {
-		debug("getAllowableActions");
-		boolean userReadOnly = checkUser(context, false);
-
-		File file = getFile(objectId);
-		if (!file.exists()) {
-			throw new CmisObjectNotFoundException("Object not found!");
-		}
-
-		return compileAllowableActions(file, userReadOnly);
+		debug("getAllowableActions not yet implemented");
+		/*
+		 * boolean userReadOnly = checkUser(context, false);
+		 * 
+		 * File file = getFile(objectId); if (!file.exists()) { throw new
+		 * CmisObjectNotFoundException("Object not found!"); }
+		 * 
+		 * return compileAllowableActions(file, userReadOnly);
+		 */
+		return null;
 	}
 
 	/**
 	 * CMIS getACL.
 	 */
 	public Acl getAcl(CallContext context, String objectId) {
-		debug("getAcl");
-		checkUser(context, false);
-
-		// get the file or folder
-		File file = getFile(objectId);
-		if (!file.exists()) {
-			throw new CmisObjectNotFoundException("Object not found!");
-		}
-
-		return compileAcl(file);
+		debug("getAcl not yet implemented");
+		/*
+		 * checkUser(context, false);
+		 * 
+		 * // get the file or folder File file = getFile(objectId); if
+		 * (!file.exists()) { throw new
+		 * CmisObjectNotFoundException("Object not found!"); }
+		 * 
+		 * return compileAcl(file);
+		 */
+		return null;
 	}
 
 	/**
@@ -1186,20 +1117,25 @@ public class CouchbaseRepository {
 	public ContentStream getContentStream(CallContext context, String objectId,
 			BigInteger offset, BigInteger length) {
 		debug("getContentStream objectId=" + objectId);
-		System.out.println("getContentStream objectId=" + objectId);
-		checkUser(context, false);
+		try {
+			System.out.println("getContentStream objectId=" + objectId);
+			checkUser(context, false);
 
-		// get the filename
-		CmisObject data = cbService.getCmisObject(objectId);
+			// get the filename
+			CmisObject data = cbService.getCmisObject(objectId);
 
-		if (data == null)
-			throw new CmisObjectNotFoundException("this file does not exist : "
-					+ objectId);
+			if (data == null)
+				throw new CmisObjectNotFoundException(
+						"this file does not exist : " + objectId);
 
-		System.out.println("filename = "+data.getFileName());
-		// get the file
-		return storeService.getContent(objectId, offset, length,
-				data.getFileName());
+			System.out.println("filename = " + data.getFileName());
+			// get the file
+
+			return storeService.getContent(objectId, offset, length,
+					data.getFileName());
+		} catch (StorageException e) {
+			throw new CmisObjectNotFoundException(e.getMessage());
+		}
 	}
 
 	/**
@@ -1395,8 +1331,7 @@ public class CouchbaseRepository {
 
 		// set object info of the the object
 		if (context.isObjectInfoRequired()) {
-			debug("getObjectParents compileObjectData file:"
-					+ data.getName());
+			debug("getObjectParents compileObjectData file:" + data.getName());
 			compileObjectData(context, data, null, false, false, userReadOnly,
 					objectInfos);
 		}
@@ -1476,9 +1411,9 @@ public class CouchbaseRepository {
 	 * private ObjectData compileObjectData(CallContext context, File file,
 	 * Set<String> filter, boolean includeAllowableActions, boolean includeAcl,
 	 * boolean userReadOnly, ObjectInfoHandler objectInfos) {
-	 * debug("compileObjectData file:" + file.getAbsolutePath());
-	 * ObjectDataImpl result = new ObjectDataImpl(); ObjectInfoImpl objectInfo =
-	 * new ObjectInfoImpl();
+	 * debug("compileObjectData file:" + file.getAbsolutePath()); ObjectDataImpl
+	 * result = new ObjectDataImpl(); ObjectInfoImpl objectInfo = new
+	 * ObjectInfoImpl();
 	 * 
 	 * result.setProperties(compileProperties(context, file, filter,
 	 * objectInfo));
@@ -1491,8 +1426,8 @@ public class CouchbaseRepository {
 	 * result.setIsExactAcl(true); }
 	 * 
 	 * if (context.isObjectInfoRequired()) { objectInfo.setObject(result);
-	 * objectInfos.addObjectInfo(objectInfo);
-	 * debug("addObjectInfo objectInfo:" + objectInfo); }
+	 * objectInfos.addObjectInfo(objectInfo); debug("addObjectInfo objectInfo:"
+	 * + objectInfo); }
 	 * 
 	 * debug("compileObjectData done."); return result; }
 	 */
@@ -1570,15 +1505,13 @@ public class CouchbaseRepository {
 			String id = data.getId();
 			addPropertyId(result, typeId, filter, PropertyIds.OBJECT_ID, id);
 			objectInfo.setId(id);
-			debug("compileProperties objectinfo.id="
-					+ objectInfo.getId());
+			debug("compileProperties objectinfo.id=" + objectInfo.getId());
 
 			// name
 			String name = data.getName();
 			addPropertyString(result, typeId, filter, PropertyIds.NAME, name);
 			objectInfo.setName(name);
-			debug("compileProperties objectinfo.name="
-					+ objectInfo.getName());
+			debug("compileProperties objectinfo.name=" + objectInfo.getName());
 
 			// created and modified by
 			addPropertyString(result, typeId, filter, PropertyIds.CREATED_BY,
@@ -1649,8 +1582,7 @@ public class CouchbaseRepository {
 					objectInfo.setHasParent(false);
 				}
 
-				debug("compileProperties hasParent="
-						+ objectInfo.hasParent());
+				debug("compileProperties hasParent=" + objectInfo.hasParent());
 
 				addPropertyIdList(result, typeId, filter,
 						PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS, null);
@@ -1719,17 +1651,14 @@ public class CouchbaseRepository {
 			}
 
 			debug("objectInfo.getId : " + objectInfo.getId());
-			debug("objectInfo.getAtomId : "
-					+ objectInfo.getAtomId());
+			debug("objectInfo.getAtomId : " + objectInfo.getAtomId());
 			debug("objectInfo.getName : " + objectInfo.getName());
-			debug("objectInfo.getCreatedBy : "
-					+ objectInfo.getCreatedBy());
+			debug("objectInfo.getCreatedBy : " + objectInfo.getCreatedBy());
 			debug("objectInfo.getCreationDate : "
 					+ objectInfo.getCreationDate());
 			debug("objectInfo.getLastModificationDate : "
 					+ objectInfo.getLastModificationDate());
-			debug("objectInfo.getBaseType : "
-					+ objectInfo.getBaseType());
+			debug("objectInfo.getBaseType : " + objectInfo.getBaseType());
 			debug("objectInfo.isCurrentVersion : "
 					+ objectInfo.isCurrentVersion());
 			debug("objectInfo.getVersionSeriesId : "
@@ -1738,12 +1667,9 @@ public class CouchbaseRepository {
 					+ objectInfo.getWorkingCopyId());
 			debug("objectInfo.getWorkingCopyOriginalId : "
 					+ objectInfo.getWorkingCopyOriginalId());
-			debug("objectInfo.hasContent : "
-					+ objectInfo.hasContent());
-			debug("objectInfo.getContentType : "
-					+ objectInfo.getContentType());
-			debug("objectInfo.getFileName : "
-					+ objectInfo.getFileName());
+			debug("objectInfo.hasContent : " + objectInfo.hasContent());
+			debug("objectInfo.getContentType : " + objectInfo.getContentType());
+			debug("objectInfo.getFileName : " + objectInfo.getFileName());
 			debug("objectInfo.getRenditionInfos : "
 					+ objectInfo.getRenditionInfos());
 			debug("objectInfo.supportsRelationships : "
@@ -1751,8 +1677,7 @@ public class CouchbaseRepository {
 			debug("objectInfo.supportsPolicies : "
 					+ objectInfo.supportsPolicies());
 			debug("objectInfo.hasAcl : " + objectInfo.hasAcl());
-			debug("objectInfo.hasParent : "
-					+ objectInfo.hasParent());
+			debug("objectInfo.hasParent : " + objectInfo.hasParent());
 			debug("objectInfo.supportsDescendants : "
 					+ objectInfo.supportsDescendants());
 			debug("objectInfo.supportsFolderTree : "
@@ -1763,8 +1688,7 @@ public class CouchbaseRepository {
 					+ objectInfo.getRelationshipTargetIds());
 			debug("objectInfo.getAdditionalLinks : "
 					+ objectInfo.getAdditionalLinks());
-			debug("objectInfo.getObject : "
-					+ objectInfo.getObject());
+			debug("objectInfo.getObject : " + objectInfo.getObject());
 
 			debug("compileProperties done.");
 
@@ -1784,9 +1708,8 @@ public class CouchbaseRepository {
 	 * IllegalArgumentException("File must not be null!"); }
 	 * 
 	 * // we can't gather properties if the file or folder doesn't exist if
-	 * (!file.exists()) {
-	 * debug("compileProperties Object not found!"); throw new
-	 * CmisObjectNotFoundException("Object not found!"); }
+	 * (!file.exists()) { debug("compileProperties Object not found!"); throw
+	 * new CmisObjectNotFoundException("Object not found!"); }
 	 * 
 	 * // copy filter Set<String> filter = (orgfilter == null ? null : new
 	 * HashSet<String>( orgfilter));
@@ -1809,9 +1732,8 @@ public class CouchbaseRepository {
 	 * objectInfo.setSupportsRelationships(false);
 	 * objectInfo.setWorkingCopyId(null);
 	 * objectInfo.setWorkingCopyOriginalId(null); } else { typeId =
-	 * BaseTypeId.CMIS_DOCUMENT.value();
-	 * debug("compileProperties typeId=" + typeId);
-	 * objectInfo.setBaseType(BaseTypeId.CMIS_DOCUMENT);
+	 * BaseTypeId.CMIS_DOCUMENT.value(); debug("compileProperties typeId=" +
+	 * typeId); objectInfo.setBaseType(BaseTypeId.CMIS_DOCUMENT);
 	 * objectInfo.setTypeId(typeId); objectInfo.setHasAcl(true);
 	 * objectInfo.setHasContent(true); objectInfo.setHasParent(true);
 	 * objectInfo.setVersionSeriesId(null);
@@ -1830,13 +1752,11 @@ public class CouchbaseRepository {
 	 * 
 	 * // id String id = fileToId(file); addPropertyId(result, typeId, filter,
 	 * PropertyIds.OBJECT_ID, id); objectInfo.setId(id);
-	 * debug("compileProperties objectinfo.id=" +
-	 * objectInfo.getId());
+	 * debug("compileProperties objectinfo.id=" + objectInfo.getId());
 	 * 
 	 * // name String name = file.getName(); addPropertyString(result, typeId,
 	 * filter, PropertyIds.NAME, name); objectInfo.setName(name);
-	 * debug("compileProperties objectinfo.name=" +
-	 * objectInfo.getName());
+	 * debug("compileProperties objectinfo.name=" + objectInfo.getName());
 	 * 
 	 * // created and modified by addPropertyString(result, typeId, filter,
 	 * PropertyIds.CREATED_BY, USER_UNKNOWN); addPropertyString(result, typeId,
@@ -1878,8 +1798,7 @@ public class CouchbaseRepository {
 	 * 
 	 * } else { addPropertyId(result, typeId, filter, PropertyIds.PARENT_ID,
 	 * null); objectInfo.setHasParent(false); }
-	 * debug("compileProperties hasParent=" +
-	 * objectInfo.hasParent());
+	 * debug("compileProperties hasParent=" + objectInfo.hasParent());
 	 * 
 	 * addPropertyIdList(result, typeId, filter,
 	 * PropertyIds.ALLOWED_CHILD_OBJECT_TYPE_IDS, null); } else {
@@ -1933,10 +1852,9 @@ public class CouchbaseRepository {
 	 * if (objectInfo.getObject() != null) { Properties oldProp =
 	 * objectInfo.getObject().getProperties(); Map<String, PropertyData<?>>
 	 * oldMap = oldProp.getProperties();
-	 * debug(" ==== OLD PROPERTIES of ENTRY ===="); for
-	 * (Map.Entry<String, PropertyData<?>> entry : oldMap .entrySet()) {
-	 * debug("entry.key : " + entry.getKey() + " - entry.value : "
-	 * + entry.getValue()); } } else {
+	 * debug(" ==== OLD PROPERTIES of ENTRY ===="); for (Map.Entry<String,
+	 * PropertyData<?>> entry : oldMap .entrySet()) { debug("entry.key : " +
+	 * entry.getKey() + " - entry.value : " + entry.getValue()); } } else {
 	 * debug("Old objectinfo.object is null"); }
 	 * 
 	 * // read custom properties debug("readCustomProperties ...");
@@ -1946,10 +1864,9 @@ public class CouchbaseRepository {
 	 * if (objectInfo.getObject() != null) { Properties newProp =
 	 * objectInfo.getObject().getProperties(); Map<String, PropertyData<?>>
 	 * newMap = newProp.getProperties();
-	 * debug(" ==== NEW PROPERTIES of ENTRY ===="); for
-	 * (Map.Entry<String, PropertyData<?>> entry : newMap .entrySet()) {
-	 * debug("entry.key : " + entry.getKey() + " - entry.value : "
-	 * + entry.getValue()); } } else {
+	 * debug(" ==== NEW PROPERTIES of ENTRY ===="); for (Map.Entry<String,
+	 * PropertyData<?>> entry : newMap .entrySet()) { debug("entry.key : " +
+	 * entry.getKey() + " - entry.value : " + entry.getValue()); } } else {
 	 * debug("New objectinfo.object is null"); }
 	 * 
 	 * if (filter != null) { if (!filter.isEmpty()) {
@@ -1958,35 +1875,25 @@ public class CouchbaseRepository {
 	 * debug("objectInfo.getId : " + objectInfo.getId());
 	 * debug("objectInfo.getAtomId : " + objectInfo.getAtomId());
 	 * debug("objectInfo.getName : " + objectInfo.getName());
-	 * debug("objectInfo.getCreatedBy : " +
-	 * objectInfo.getCreatedBy());
-	 * debug("objectInfo.getCreationDate : " +
-	 * objectInfo.getCreationDate());
+	 * debug("objectInfo.getCreatedBy : " + objectInfo.getCreatedBy());
+	 * debug("objectInfo.getCreationDate : " + objectInfo.getCreationDate());
 	 * debug("objectInfo.getLastModificationDate : " +
-	 * objectInfo.getLastModificationDate());
-	 * debug("objectInfo.getBaseType : " +
-	 * objectInfo.getBaseType());
-	 * debug("objectInfo.isCurrentVersion : " +
-	 * objectInfo.isCurrentVersion());
-	 * debug("objectInfo.getVersionSeriesId : " +
-	 * objectInfo.getVersionSeriesId());
-	 * debug("objectInfo.getWorkingCopyId : " +
-	 * objectInfo.getWorkingCopyId());
+	 * objectInfo.getLastModificationDate()); debug("objectInfo.getBaseType : "
+	 * + objectInfo.getBaseType()); debug("objectInfo.isCurrentVersion : " +
+	 * objectInfo.isCurrentVersion()); debug("objectInfo.getVersionSeriesId : "
+	 * + objectInfo.getVersionSeriesId());
+	 * debug("objectInfo.getWorkingCopyId : " + objectInfo.getWorkingCopyId());
 	 * debug("objectInfo.getWorkingCopyOriginalId : " +
-	 * objectInfo.getWorkingCopyOriginalId());
-	 * debug("objectInfo.hasContent : " + objectInfo.hasContent());
-	 * debug("objectInfo.getContentType : " +
-	 * objectInfo.getContentType());
-	 * debug("objectInfo.getFileName : " +
-	 * objectInfo.getFileName());
-	 * debug("objectInfo.getRenditionInfos : " +
+	 * objectInfo.getWorkingCopyOriginalId()); debug("objectInfo.hasContent : "
+	 * + objectInfo.hasContent()); debug("objectInfo.getContentType : " +
+	 * objectInfo.getContentType()); debug("objectInfo.getFileName : " +
+	 * objectInfo.getFileName()); debug("objectInfo.getRenditionInfos : " +
 	 * objectInfo.getRenditionInfos());
 	 * debug("objectInfo.supportsRelationships : " +
 	 * objectInfo.supportsRelationships());
-	 * debug("objectInfo.supportsPolicies : " +
-	 * objectInfo.supportsPolicies()); debug("objectInfo.hasAcl : "
-	 * + objectInfo.hasAcl()); debug("objectInfo.hasParent : " +
-	 * objectInfo.hasParent());
+	 * debug("objectInfo.supportsPolicies : " + objectInfo.supportsPolicies());
+	 * debug("objectInfo.hasAcl : " + objectInfo.hasAcl());
+	 * debug("objectInfo.hasParent : " + objectInfo.hasParent());
 	 * debug("objectInfo.supportsDescendants : " +
 	 * objectInfo.supportsDescendants());
 	 * debug("objectInfo.supportsFolderTree : " +
@@ -1996,8 +1903,8 @@ public class CouchbaseRepository {
 	 * debug("objectInfo.getRelationshipTargetIds : " +
 	 * objectInfo.getRelationshipTargetIds());
 	 * debug("objectInfo.getAdditionalLinks : " +
-	 * objectInfo.getAdditionalLinks());
-	 * debug("objectInfo.getObject : " + objectInfo.getObject());
+	 * objectInfo.getAdditionalLinks()); debug("objectInfo.getObject : " +
+	 * objectInfo.getObject());
 	 * 
 	 * debug("compileProperties done.");
 	 * 
@@ -2094,8 +2001,7 @@ public class CouchbaseRepository {
 		}
 
 		debug("========= //\nProperties : " + properties);
-		debug("========= //\nObjectInfo.typeId : "
-				+ objectInfo.getTypeId());
+		debug("========= //\nObjectInfo.typeId : " + objectInfo.getTypeId());
 
 	}
 
@@ -2152,8 +2058,7 @@ public class CouchbaseRepository {
 	 * properties.replaceProperty(prop); }
 	 * 
 	 * debug("========= //\nProperties : " + properties);
-	 * debug("========= //\nObjectInfo.typeId : " +
-	 * objectInfo.getTypeId());
+	 * debug("========= //\nObjectInfo.typeId : " + objectInfo.getTypeId());
 	 * 
 	 * }
 	 */
@@ -2418,51 +2323,46 @@ public class CouchbaseRepository {
 	 */
 	private AllowableActions compileAllowableActions(File file,
 			boolean userReadOnly) {
-		if (file == null) {
-			throw new IllegalArgumentException("File must not be null!");
-		}
-
-		// we can't gather allowable actions if the file or folder doesn't exist
-		if (!file.exists()) {
-			throw new CmisObjectNotFoundException("Object not found!");
-		}
-
-		boolean isReadOnly = !file.canWrite();
-		boolean isFolder = file.isDirectory();
-		boolean isRoot = root.equals(file);
-
-		Set<Action> aas = EnumSet.noneOf(Action.class);
-
-		addAction(aas, Action.CAN_GET_OBJECT_PARENTS, !isRoot);
-		addAction(aas, Action.CAN_GET_PROPERTIES, true);
-		addAction(aas, Action.CAN_UPDATE_PROPERTIES, !userReadOnly
-				&& !isReadOnly);
-		addAction(aas, Action.CAN_MOVE_OBJECT, !userReadOnly && !isRoot);
-		addAction(aas, Action.CAN_DELETE_OBJECT, !userReadOnly && !isReadOnly
-				&& !isRoot);
-		addAction(aas, Action.CAN_GET_ACL, true);
-
-		if (isFolder) {
-			addAction(aas, Action.CAN_GET_DESCENDANTS, true);
-			addAction(aas, Action.CAN_GET_CHILDREN, true);
-			addAction(aas, Action.CAN_GET_FOLDER_PARENT, !isRoot);
-			addAction(aas, Action.CAN_GET_FOLDER_TREE, true);
-			addAction(aas, Action.CAN_CREATE_DOCUMENT, !userReadOnly);
-			addAction(aas, Action.CAN_CREATE_FOLDER, !userReadOnly);
-			addAction(aas, Action.CAN_DELETE_TREE, !userReadOnly && !isReadOnly);
-		} else {
-			addAction(aas, Action.CAN_GET_CONTENT_STREAM, file.length() > 0);
-			addAction(aas, Action.CAN_SET_CONTENT_STREAM, !userReadOnly
-					&& !isReadOnly);
-			addAction(aas, Action.CAN_DELETE_CONTENT_STREAM, !userReadOnly
-					&& !isReadOnly);
-			addAction(aas, Action.CAN_GET_ALL_VERSIONS, true);
-		}
-
-		AllowableActionsImpl result = new AllowableActionsImpl();
-		result.setAllowableActions(aas);
-
-		return result;
+		debug("compileAllowableActions not yet implemented");
+		/*
+		 * if (file == null) { throw new
+		 * IllegalArgumentException("File must not be null!"); }
+		 * 
+		 * // we can't gather allowable actions if the file or folder doesn't
+		 * exist if (!file.exists()) { throw new
+		 * CmisObjectNotFoundException("Object not found!"); }
+		 * 
+		 * boolean isReadOnly = !file.canWrite(); boolean isFolder =
+		 * file.isDirectory(); boolean isRoot = root.equals(file);
+		 * 
+		 * Set<Action> aas = EnumSet.noneOf(Action.class);
+		 * 
+		 * addAction(aas, Action.CAN_GET_OBJECT_PARENTS, !isRoot);
+		 * addAction(aas, Action.CAN_GET_PROPERTIES, true); addAction(aas,
+		 * Action.CAN_UPDATE_PROPERTIES, !userReadOnly && !isReadOnly);
+		 * addAction(aas, Action.CAN_MOVE_OBJECT, !userReadOnly && !isRoot);
+		 * addAction(aas, Action.CAN_DELETE_OBJECT, !userReadOnly && !isReadOnly
+		 * && !isRoot); addAction(aas, Action.CAN_GET_ACL, true);
+		 * 
+		 * if (isFolder) { addAction(aas, Action.CAN_GET_DESCENDANTS, true);
+		 * addAction(aas, Action.CAN_GET_CHILDREN, true); addAction(aas,
+		 * Action.CAN_GET_FOLDER_PARENT, !isRoot); addAction(aas,
+		 * Action.CAN_GET_FOLDER_TREE, true); addAction(aas,
+		 * Action.CAN_CREATE_DOCUMENT, !userReadOnly); addAction(aas,
+		 * Action.CAN_CREATE_FOLDER, !userReadOnly); addAction(aas,
+		 * Action.CAN_DELETE_TREE, !userReadOnly && !isReadOnly); } else {
+		 * addAction(aas, Action.CAN_GET_CONTENT_STREAM, file.length() > 0);
+		 * addAction(aas, Action.CAN_SET_CONTENT_STREAM, !userReadOnly &&
+		 * !isReadOnly); addAction(aas, Action.CAN_DELETE_CONTENT_STREAM,
+		 * !userReadOnly && !isReadOnly); addAction(aas,
+		 * Action.CAN_GET_ALL_VERSIONS, true); }
+		 * 
+		 * AllowableActionsImpl result = new AllowableActionsImpl();
+		 * result.setAllowableActions(aas);
+		 * 
+		 * return result;
+		 */
+		return null;
 	}
 
 	private void addAction(Set<Action> aas, Action action, boolean condition) {
@@ -2583,77 +2483,62 @@ public class CouchbaseRepository {
 	/**
 	 * Returns the File object by id or throws an appropriate exception.
 	 */
-	private File getFile(String id) {
-		try {
-			return idToFile(id);
-		} catch (Exception e) {
-			throw new CmisObjectNotFoundException(e.getMessage(), e);
-		}
-	}
+	/*
+	 * private File getFile(String id) { try { return idToFile(id); } catch
+	 * (Exception e) { throw new CmisObjectNotFoundException(e.getMessage(), e);
+	 * } }
+	 */
 
 	/**
 	 * Converts an id to a File object. A simple and insecure implementation,
 	 * but good enough for now.
 	 */
-	private File idToFile(String id) throws IOException {
-		if (id == null || id.length() == 0) {
-			throw new CmisInvalidArgumentException("Id is not valid!");
-		}
-
-		if (id.equals(ROOT_ID)) {
-			return root;
-		}
-
-		return new File(root, (new String(
-				Base64.decode(id.getBytes("US-ASCII")), "UTF-8")).replace('/',
-				File.separatorChar));
-	}
+	/*
+	 * private File idToFile(String id) throws IOException { if (id == null ||
+	 * id.length() == 0) { throw new
+	 * CmisInvalidArgumentException("Id is not valid!"); }
+	 * 
+	 * if (id.equals(ROOT_ID)) { return root; }
+	 * 
+	 * return new File(root, (new String(
+	 * Base64.decode(id.getBytes("US-ASCII")), "UTF-8")).replace('/',
+	 * File.separatorChar)); }
+	 */
 
 	/**
 	 * Returns the id of a File object or throws an appropriate exception.
 	 */
-	private String getId(File file) {
-		try {
-			return fileToId(file);
-		} catch (Exception e) {
-			throw new CmisRuntimeException(e.getMessage(), e);
-		}
-	}
+	/*
+	 * private String getId(File file) { try { return fileToId(file); } catch
+	 * (Exception e) { throw new CmisRuntimeException(e.getMessage(), e); } }
+	 */
 
 	/**
 	 * Creates a File object from an id. A simple and insecure implementation,
 	 * but good enough for now.
 	 */
-	private String fileToId(File file) throws IOException {
-		if (file == null) {
-			throw new IllegalArgumentException("File is not valid!");
-		}
+	/*
+	 * private String fileToId(File file) throws IOException { if (file == null)
+	 * { throw new IllegalArgumentException("File is not valid!"); }
+	 * 
+	 * if (root.equals(file)) { return ROOT_ID; }
+	 * 
+	 * String path = getRepositoryPath(file);
+	 * 
+	 * return Base64.encodeBytes(path.getBytes("UTF-8")); }
+	 */
 
-		if (root.equals(file)) {
-			return ROOT_ID;
-		}
-
-		String path = getRepositoryPath(file);
-
-		return Base64.encodeBytes(path.getBytes("UTF-8"));
-	}
-
-	private String getRepositoryPath(File file) {
-		String path = file.getAbsolutePath()
-				.substring(root.getAbsolutePath().length())
-				.replace(File.separatorChar, '/');
-		if (path.length() == 0) {
-			path = "/";
-		} else if (path.charAt(0) != '/') {
-			path = "/" + path;
-		}
-		return path;
-	}
+	/*
+	 * private String getRepositoryPath(File file) { String path =
+	 * file.getAbsolutePath() .substring(root.getAbsolutePath().length())
+	 * .replace(File.separatorChar, '/'); if (path.length() == 0) { path = "/";
+	 * } else if (path.charAt(0) != '/') { path = "/" + path; } return path; }
+	 */
 
 	private void debug(String msg) {
 		if (LOG.isDebugEnabled()) {
 			LOG.debug("<{}> {}", repositoryId, msg);
 		}
-		//System.out.println("(" + repositoryId + ") {" + msg + "}");
+		// System.out.println("(" + repositoryId + ") {" + msg + "}");
 	}
 }

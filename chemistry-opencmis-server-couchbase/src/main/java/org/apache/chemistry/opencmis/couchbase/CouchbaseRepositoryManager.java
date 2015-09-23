@@ -75,8 +75,8 @@ public class CouchbaseRepositoryManager {
         for (CouchbaseRepository repository : repositories.values()) {
             sb.append('[');
             sb.append(repository.getRepositoryId());
-            sb.append(" -> ");
-            sb.append(repository.getRootDirectory().getAbsolutePath());
+          //  sb.append(" -> ");
+          //  sb.append(repository.getRootDirectory().getAbsolutePath());
             sb.append(']');
         }
 
