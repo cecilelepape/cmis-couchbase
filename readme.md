@@ -4,7 +4,7 @@ The main folder of this project is chemistry-opencmis-server-couchbase. It conta
 
 Get the code from chemistry-opencmis-server-couchbase and edit the properties you can find in src/main/webapp/WEB-INF/classes/repository.properties
 
-- Edit the login with the credentials that must match your Web server's one. I use Apache Tomcat so I edited the conf/tomcat-users.xml to added test/test user.
+- Edit the login with the credentials that must match your Web server's one. I use Apache Tomcat so I edited the conf/tomcat-users.xml to add test/test user.
 - Edit the location of your couchbase server (localhost by default)
 - Create a bucket to store your metadata in Couchbase. By default the bucket must be named cmismeta.
 - If you're testing a local storage on your filesystem, update the storage path
