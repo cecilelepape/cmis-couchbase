@@ -1,4 +1,4 @@
-This project is a simple demo to show how to build Content Management system flexible and scalable using Couchbase as the repository for metadata. For more information check on http://cecilelepape.blogspot.fr/2015/09/flexible-and-scalable-content.html
+This project is a simple demo to show how to build a Content Management system flexible and scalable using Couchbase as the repository for metadata. For more information check on http://cecilelepape.blogspot.fr/2015/09/flexible-and-scalable-content.html
 
 The main folder of this project is chemistry-opencmis-server-couchbase. It contains all the CMIS implementation of a server using Couchbase to store metadata, and either local storage or AWS S3 storage.
 
