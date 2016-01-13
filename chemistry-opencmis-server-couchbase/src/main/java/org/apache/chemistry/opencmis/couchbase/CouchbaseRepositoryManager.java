@@ -42,8 +42,6 @@ public class CouchbaseRepositoryManager {
         if (fsr == null || fsr.getRepositoryId() == null) {
             return;
         }
-
-        System.out.println("<RepositoryManager> adding repo "+fsr.getRepositoryId());
         repositories.put(fsr.getRepositoryId(), fsr);
     }
 
@@ -51,7 +49,6 @@ public class CouchbaseRepositoryManager {
      * Gets a repository object by id.
      */
     public CouchbaseRepository getRepository(String repositoryId) {
-        System.out.println("<RepositoryManager> getting repo "+repositoryId);
 
         CouchbaseRepository result = repositories.get(repositoryId);
         if (result == null) {
@@ -68,6 +65,14 @@ public class CouchbaseRepositoryManager {
         return repositories.values();
     }
 
+    
+    public void closeAll(){
+    	for(CouchbaseRepository repo :  repositories.values()){
+    		repo.close();
+    	}
+    }
+    
+    
     @Override
     public String toString() {
         StringBuilder sb = new StringBuilder(128);

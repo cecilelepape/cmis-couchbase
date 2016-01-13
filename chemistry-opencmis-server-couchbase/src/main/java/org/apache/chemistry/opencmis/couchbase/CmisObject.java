@@ -15,6 +15,7 @@ public class CmisObject {
 	private String lastModifiedBy;
 	private String contentType;
 	private String fileName = null;
+	private long contentLength;
 	private GregorianCalendar creationDate;
 	private GregorianCalendar lastModificationDate;
 	private String parentId = null;
@@ -72,7 +73,15 @@ public class CmisObject {
 	public String getFileName() {
 		return this.fileName;
 	}
+	
+	public void setContentLength(long length){
+		contentLength = length;
+	}
 
+	public long getContentLength(){
+		return this.contentLength;
+	}
+	
 	public void setCreationDate(GregorianCalendar cal) {
 		this.creationDate = cal;
 	}

@@ -33,12 +33,16 @@ import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import com.couchbase.client.java.CouchbaseCluster;
+
 import static org.junit.Assert.*;
 
 public class TestCouchbaseRepository {
 
-	static String storagePath = "/Users/cecilelepape/Documents/CMIS/repo/couchbase";
-	static String tempPath = "/Users/cecilelepape/Documents/tools/apache-tomcat-8.0-2.24/temp";
+	static final String storagePath = "/Users/cecilelepape/Documents/CMIS/repo/couchbase";
+	static final String tempPath = "/Users/cecilelepape/Documents/tools/apache-tomcat-8.0-2.24/temp";
+	static final String bucketId = "cmismeta";
+	static final String rootId = "@root@";
 	
 	CouchbaseRepository repo = null;
 	CouchbaseRepositoryManager repoManager = null;
@@ -46,6 +50,7 @@ public class TestCouchbaseRepository {
 	static final String repoId = "test";
 	static CouchbaseService cbService = null;
 	static StorageService storageService = null;
+	static CouchbaseCluster cluster = null;
 
 	public TestCouchbaseRepository() {
 		repoManager = new CouchbaseRepositoryManager();
@@ -55,7 +60,8 @@ public class TestCouchbaseRepository {
 	
 	@BeforeClass
 	static public void before(){
-		cbService = CouchbaseService.getInstance();
+		cluster = CouchbaseCluster.create("192.168.56.105");
+		cbService = new CouchbaseService(cluster,bucketId);
 		storageService = new LocalStorageService(storagePath);
 	}
 	
@@ -77,6 +83,8 @@ public class TestCouchbaseRepository {
 				typeManager);
 		assertNotNull("repo not found", repo);
 		repo.setStorageService(storageService);
+		repo.setCouchbaseService(cbService);
+		
 		// check if root document exists
 		try {
 			boolean rootExists = cbService.checkIfExists(CouchbaseRepository.ROOT_ID);
@@ -96,8 +104,13 @@ public class TestCouchbaseRepository {
 		try {
 			repo = new CouchbaseRepository(repoId,
 					typeManager);
+			
 			assertNotNull("repo not found", repo);
 			System.out.println("Repository ok.");
+			
+			repo.setStorageService(storageService);
+			repo.setCouchbaseService(cbService);
+			
 
 			repo.setUserReadWrite("test");
 

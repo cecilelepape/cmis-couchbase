@@ -1,8 +1,10 @@
 package org.apache.chemistry.opencmis.couchbase;
 
 import org.apache.chemistry.opencmis.commons.data.ContentStream;
+import org.apache.chemistry.opencmis.commons.data.ObjectList;
 import org.apache.chemistry.opencmis.commons.data.Properties;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -14,9 +16,14 @@ import java.io.UnsupportedEncodingException;
 import com.couchbase.client.java.Cluster;
 import com.couchbase.client.java.CouchbaseCluster;
 import com.couchbase.client.java.Bucket;
+import com.couchbase.client.java.bucket.BucketManager;
 import com.couchbase.client.java.document.JsonDocument;
 import com.couchbase.client.java.document.json.JsonArray;
 import com.couchbase.client.java.document.json.JsonObject;
+import com.couchbase.client.java.query.Query;
+import com.couchbase.client.java.query.QueryResult;
+import com.couchbase.client.java.query.QueryRow;
+import com.couchbase.client.java.query.Statement;
 
 import org.apache.chemistry.opencmis.commons.data.PropertyData;
 import org.apache.chemistry.opencmis.commons.enums.BaseTypeId;
@@ -24,6 +31,7 @@ import org.apache.chemistry.opencmis.commons.PropertyIds;
 import org.apache.chemistry.opencmis.commons.impl.Base64;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertiesImpl;
 import org.apache.chemistry.opencmis.commons.impl.server.ObjectInfoImpl;
+import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectListImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyStringImpl;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.PropertyDateTimeImpl;
 import org.apache.chemistry.opencmis.commons.impl.jaxb.CmisException;
@@ -36,28 +44,18 @@ public class CouchbaseService {
 	private static final Logger LOG = LoggerFactory
 			.getLogger(CouchbaseService.class);
 
-	static private final String BUCKET = "test";
-
 	static private final String CHILDREN = "cb:children";
 	static public final String PATH_SEPARATOR = "/";
 
 	private Cluster cluster = null;
 	private Bucket bucket = null;
+	private String bucketId = null;
 
-	static private CouchbaseService cbService = null;
-
-	static public CouchbaseService getInstance() {
-		if (cbService == null) {
-			System.out.println("CouchbaseService created by thread "+Thread.currentThread().getName()+" - class:"+Thread.currentThread().getClass()+" - id:"+Thread.currentThread().getId()+" - state:"+Thread.currentThread().getState());
-			
-			cbService = new CouchbaseService();
-		}
-		return cbService;
-	}
-
-	private CouchbaseService() {
-		cluster = CouchbaseCluster.create();
-		bucket = cluster.openBucket(BUCKET);
+	public CouchbaseService(Cluster cluster, String bucketId) {
+		this.cluster = cluster;
+		this.bucketId = bucketId;
+		bucket = cluster.openBucket(this.bucketId);
+		
 		// creation of root node if not exist yet
 		createRootFolderIfNotExists();
 		debug("CouchbaseService started : bucket=" + bucket.name());
@@ -66,9 +64,11 @@ public class CouchbaseService {
 	private boolean createRootFolderIfNotExists() {
 		try {
 			boolean rootExist = checkIfExists(CouchbaseRepository.ROOT_ID);
+			debug("root exists ? "+rootExist);
 			if (!rootExist) {
 				// create the root document in Couchbase
 				JsonDocument doc = createFolderProperties(null, CouchbaseRepository.ROOT_ID, null);
+				debug("root doc = "+doc);
 				return doc!=null;
 			}
 			
@@ -81,25 +81,50 @@ public class CouchbaseService {
 
 	public void close() {
 		if (cluster != null) {
-			debug("CouchbaseService is stopping by thread "+Thread.currentThread().getName());
+			debug("CouchbaseService is stopped ...");
 			Boolean isDisconnected = cluster.disconnect();
 			debug("CouchbaseService stopped ? "+isDisconnected);
 		}
 	}
 
-	public CmisObject getCmisObject(String objectId) {
+	/**
+	 *  Create a cmis object by its cmis id.
+	 * @param objectId
+	 * @return 
+	 */
+	public CmisObject getCmisObject(String objectId) throws CouchbaseException{
 		debug("CouchbaseService getCmisObject objectId:"
 				+ objectId);
 		if (this.bucket == null)
 			return null;
+	
+		JsonDocument jsondoc = this.bucket.get(objectId);
+	
+		if(jsondoc == null) new CouchbaseException("Object does not exists. objectId = "+objectId);
+		return getCmisObject(jsondoc.content());
+	}
+	
+	
+	/**
+	 *  Create a cmis object by its cmis id.
+	 * @param objectId
+	 * @return 
+	 */
+	public CmisObject getCmisObject(JsonObject doc) throws CouchbaseException{
+		debug("CouchbaseService getCmisObject doc:"
+				+ doc);
+		if (this.bucket == null) throw new CouchbaseException("Bucket cannot be found");
+		
+		// get the identifier inside the doc
+		String objectId = doc.getString(PropertyIds.OBJECT_ID);
+		
+		if(objectId == null) throw new CouchbaseException("identifier unknown");
 		CmisObject data = new CmisObject(objectId);
 
 		JsonDocument jsondoc = this.bucket.get(objectId);
 		debug("jsondoc = " + jsondoc);
-		if (jsondoc == null)
-			return null;
+		if (jsondoc == null) throw new CouchbaseException("Document is empty");
 
-		JsonObject doc = jsondoc.content();
 		java.util.Set<java.lang.String> names = doc.getNames();
 
 		for (String propId : names) {
@@ -126,7 +151,11 @@ public class CouchbaseService {
 			} 
 			else if (PropertyIds.CONTENT_STREAM_FILE_NAME.equals(propId)) {
 				// debug("reading "+propId+" : "+doc.getString(propId));
-				//data.setFileName(doc.getString(propId));
+				data.setFileName(doc.getString(propId));
+			}
+			else if (PropertyIds.CONTENT_STREAM_LENGTH.equals(propId)) {
+				// debug("reading "+propId+" : "+doc.getString(propId));
+				data.setContentLength(doc.getLong((propId)));
 			}
 
 			// calendar properties
@@ -461,7 +490,7 @@ public class CouchbaseService {
 	public CmisObject createDocument(CmisObject parentData,
 			String documentname, String username, ContentStream contentStream)
 			throws CouchbaseException {
-		debug("createNewDocument not yet implemented");
+		debug("createNewDocument documentName="+documentname);
 
 		try {
 			// 0) document id
@@ -668,7 +697,19 @@ public class CouchbaseService {
 
 		debug("=======readProperties done======");
 	}
-
+	
+	public List<CmisObject> query(String statement) throws CouchbaseException{
+		List<CmisObject> dataList = new ArrayList<CmisObject>();
+		Query query = Query.simple("select * from cmismeta where `cmis:objectTypeId`=\"cmis:document\"");
+		QueryResult results = bucket.query(query);
+		for(QueryRow row : results.allRows()){
+			System.out.println("result : "+row.value().getObject("cmismeta"));
+			CmisObject obj = getCmisObject(row.value().getObject("cmismeta"));
+			dataList.add(obj);
+		}
+		return dataList;
+	}
+	
 	@Override
 	public String toString() {
 		StringBuffer buf = new StringBuffer();

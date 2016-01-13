@@ -36,6 +36,8 @@ import org.apache.chemistry.opencmis.server.support.wrapper.ConformanceCmisServi
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.couchbase.client.java.CouchbaseCluster;
+
 import rx.internal.schedulers.NewThreadWorker;
 import rx.schedulers.Schedulers;
 
@@ -53,6 +55,8 @@ public class CouchbaseCmisServiceFactory extends AbstractServiceFactory {
 	private static final String SUFFIX_READWRITE = ".readwrite";
 	private static final String SUFFIX_READONLY = ".readonly";
 	private static final String SUFFIX_STORAGE = ".storage";
+	private static final String SUFFIX_METADATA = ".metadata";
+	private static final String SUFFIX_LOCATION = ".location";
 
 	/** Default maxItems value for getTypeChildren()}. */
 	private static final BigInteger DEFAULT_MAX_ITEMS_TYPES = BigInteger
@@ -75,9 +79,6 @@ public class CouchbaseCmisServiceFactory extends AbstractServiceFactory {
 
 	/** Each thread gets its own {@link CouchbaseCmisService} instance. */
 	private ThreadLocal<CallContextAwareCmisService> threadLocalService = new ThreadLocal<CallContextAwareCmisService>();
-
-	/** The couchbase service */
-	CouchbaseService couchbaseService = null;
 
 	private CouchbaseRepositoryManager repositoryManager;
 	private CouchbaseUserManager userManager;
@@ -108,7 +109,6 @@ public class CouchbaseCmisServiceFactory extends AbstractServiceFactory {
 				DEFAULT_MAX_ITEMS_TYPES, DEFAULT_DEPTH_TYPES,
 				DEFAULT_MAX_ITEMS_OBJECTS, DEFAULT_DEPTH_OBJECTS);
 
-		couchbaseService = CouchbaseService.getInstance();
 		readConfiguration(parameters);
 	}
 
@@ -124,50 +124,21 @@ public class CouchbaseCmisServiceFactory extends AbstractServiceFactory {
 						+ " - state:"
 						+ Thread.currentThread().getState());
 
-		if (couchbaseService != null)
-			couchbaseService.close();
-		couchbaseService = null;
-		forceRxJavaSchedulerShutdown();
+		repositoryManager.closeAll();
 
 		threadLocalService = null;
 	}
-
-	private void forceRxJavaSchedulerShutdown() {
-		LOG.warn("FORCE RxJava Scheduler shutdown : Schedulers.computation="
-				+ Schedulers.computation());
-
-		Object pool = getField(Schedulers.computation(), "pool");
-		if (pool != null) {
-			for (NewThreadWorker w : (NewThreadWorker[]) getField(pool,
-					"eventLoops")) {
-				w.unsubscribe();
+	
+	 private void debug(String msg) {
+			if (LOG.isDebugEnabled()) {
+				LOG.debug("<CouchbaseCmisServiceFactory> {}",  msg);
 			}
-		} else {
-			System.out.println("no pool found");
+			System.out.println("CouchbaseCmisServiceFactory {" + msg + "}");
 		}
-	}
-
-	private Object getField(Object object, String field) {
-		try {
-			Class<? extends Object> clazz = object.getClass();
-			Field[] fields = clazz.getFields();
-
-			LOG.warn("Found " + fields.length + " fields");
-			for (Field iField : fields) {
-				LOG.warn("Found Field: " + iField.toString() + " - "
-						+ iField.getName());
-			}
-
-			if (Arrays.asList().contains(field))
-				return clazz.getField(field);
-		} catch (Exception e) {
-			e.printStackTrace();
-		}
-		return null;
-	}
 
 	@Override
 	public CmisService getService(CallContext context) {
+		debug("getService");
 		// authenticate the user
 		// if the authentication fails, authenticate() throws a
 		// CmisPermissionDeniedException
@@ -199,6 +170,9 @@ public class CouchbaseCmisServiceFactory extends AbstractServiceFactory {
 	 * definitions.
 	 */
 	private void readConfiguration(Map<String, String> parameters) {
+		debug("readConfiguration");
+		CouchbaseCluster cluster = null;
+		String location = null;
 		List<String> keys = new ArrayList<String>(parameters.keySet());
 		Collections.sort(keys);
 
@@ -224,6 +198,7 @@ public class CouchbaseCmisServiceFactory extends AbstractServiceFactory {
 				LOG.info("Adding login '{}'.", username);
 
 				userManager.addLogin(username, password);
+				
 			} else if (key.startsWith(PREFIX_TYPE)) {
 				// load type definition
 				String typeFile = replaceSystemProperties(parameters.get(key)
@@ -287,7 +262,22 @@ public class CouchbaseCmisServiceFactory extends AbstractServiceFactory {
 					for (String user : split(parameters.get(key))) {
 						cbr.setUserReadOnly(replaceSystemProperties(user));
 					}
-				} else if (key.endsWith(SUFFIX_STORAGE)) {
+				} else if (key.endsWith(SUFFIX_LOCATION)) {
+					System.out.println("Config ends with " + SUFFIX_LOCATION);
+					location = parameters.get(key);
+					System.out.println("Config couchbase location " + location);
+					cluster = CouchbaseCluster.create(location);
+				}else if (key.endsWith(SUFFIX_METADATA)) {
+					System.out.println("Config ends with " + SUFFIX_METADATA);
+					CouchbaseRepository cbr = repositoryManager
+							.getRepository(repositoryId);
+					String metadataBucket = parameters.get(key);
+					System.out.println("Config metadata bucket " + metadataBucket);
+
+					CouchbaseService cbService = new CouchbaseService(cluster, metadataBucket);
+					cbr.setCouchbaseService(cbService);
+					
+				}else if (key.endsWith(SUFFIX_STORAGE)) {
 					System.out.println("Config ends with " + SUFFIX_STORAGE);
 					CouchbaseRepository cbr = repositoryManager
 							.getRepository(repositoryId);

@@ -32,6 +32,7 @@ import com.amazonaws.services.s3.model.ListObjectsRequest;
 import com.amazonaws.services.s3.model.ObjectListing;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PutObjectRequest;
+import com.amazonaws.services.s3.model.PutObjectResult;
 import com.amazonaws.services.s3.model.S3ObjectSummary;
 
 public class AWSStorageService implements StorageService {
@@ -60,8 +61,12 @@ public class AWSStorageService implements StorageService {
 		debug("writeContent dataId=" + dataId);
 
 		try {
+			Long contentLength = contentStream.getLength();
+			 ObjectMetadata metadata = new ObjectMetadata();
+			    metadata.setContentLength(contentLength);
+			    
 			s3client.putObject(new PutObjectRequest(bucket, dataId,
-					contentStream.getStream(), null));
+					contentStream.getStream(), metadata));
 			printFiles();
 		} catch (AmazonServiceException ase) {
 			System.out.println("Amazon Service Error:");
@@ -223,15 +228,18 @@ public class AWSStorageService implements StorageService {
 	}
 
 	private void printFiles() {
+		System.out.println("printFiles ...");
 		List<String> files = getFileList();
 		for (String file : files)
 			System.out.println(file);
+		System.out.println("printFiles done.");
 	}
 
 	private void debug(String msg) {
 		if (LOG.isDebugEnabled()) {
 			LOG.debug("{}", msg);
 		}
+		System.out.println("[AWSStorageService] "+msg);
 	}
 
 	@Override

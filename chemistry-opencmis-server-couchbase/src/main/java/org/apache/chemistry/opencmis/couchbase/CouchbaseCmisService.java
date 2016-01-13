@@ -43,6 +43,7 @@ import org.apache.chemistry.opencmis.commons.definitions.TypeDefinitionList;
 import org.apache.chemistry.opencmis.commons.enums.IncludeRelationships;
 import org.apache.chemistry.opencmis.commons.enums.UnfileObject;
 import org.apache.chemistry.opencmis.commons.enums.VersioningState;
+import org.apache.chemistry.opencmis.commons.exceptions.CmisNotSupportedException;
 import org.apache.chemistry.opencmis.commons.exceptions.CmisObjectNotFoundException;
 import org.apache.chemistry.opencmis.commons.impl.dataobjects.ObjectListImpl;
 import org.apache.chemistry.opencmis.commons.impl.server.AbstractCmisService;
@@ -106,6 +107,7 @@ public class CouchbaseCmisService extends AbstractCmisService implements CallCon
      * Gets the repository for the current call.
      */
     public CouchbaseRepository getRepository() {
+    	debug("getRepository");
         return repositoryManager.getRepository(getCallContext().getRepositoryId());
     }
 
@@ -113,6 +115,7 @@ public class CouchbaseCmisService extends AbstractCmisService implements CallCon
 
     @Override
     public RepositoryInfo getRepositoryInfo(String repositoryId, ExtensionsData extension) {
+    	debug("getRepositoryInfo repoId="+repositoryId);
         for (CouchbaseRepository fsr : repositoryManager.getRepositories()) {
             if (fsr.getRepositoryId().equals(repositoryId)) {
                 return fsr.getRepositoryInfo(getCallContext());
@@ -358,6 +361,21 @@ public class CouchbaseCmisService extends AbstractCmisService implements CallCon
     public Acl getAcl(String repositoryId, String objectId, Boolean onlyBasicPermissions, ExtensionsData extension) {
         return getRepository().getAcl(getCallContext(), objectId);
     }
+    
+    // ---- Search service
+    
+
+	@Override
+	public ObjectList query(String repositoryId, String statement,
+			Boolean searchAllVersions, Boolean includeAllowableActions,
+			IncludeRelationships includeRelationships, String renditionFilter,
+			BigInteger maxItems, BigInteger skipCount, ExtensionsData extension) {
+		return getRepository().query(getCallContext(), repositoryId, statement,
+				searchAllVersions, includeAllowableActions,
+				includeRelationships, renditionFilter, maxItems, skipCount,
+				extension, this);
+	}
+
     
     private void debug(String msg) {
 		if (LOG.isDebugEnabled()) {
